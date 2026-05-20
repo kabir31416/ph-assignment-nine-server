@@ -6,12 +6,9 @@ const app = express();
 const dotenv = require('dotenv');
 dotenv.config();
 const port = process.env.PORT;
-
 const cors = require('cors');
-
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
-// Middleware
 app.use(express.json())
 app.use(cors());
 
@@ -39,7 +36,6 @@ async function run() {
             res.send(result);
         });
 
-
         app.get('/', (req, res) => {
             res.send('Hello World!');
         });
@@ -50,7 +46,6 @@ async function run() {
                 const result = await cursor.toArray();
                 res.send(result);
         });
-
 
         app.get('/ideas', async (req, res) => {
             const result = await ideasCollection.find().toArray();
@@ -64,7 +59,6 @@ async function run() {
             });
             res.send(result);
         });
-
 
     } catch (error) {
         console.error(error);
