@@ -44,6 +44,13 @@ async function run() {
             res.send('Hello World!');
         });
 
+        app.get("/ideas/trending", async (req, res) => {
+            
+                const cursor = ideasCollection.find().limit(6);
+                const result = await cursor.toArray();
+                res.send(result);
+        });
+
 
         app.get('/ideas', async (req, res) => {
             const result = await ideasCollection.find().toArray();
