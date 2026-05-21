@@ -1,16 +1,44 @@
 const dns = require("node:dns");
 dns.setServers(["8.8.8.8", "8.8.4.4"]);
 
-const express = require('express');
+const express = require("express");
 const app = express();
-const dotenv = require('dotenv');
+const dotenv = require("dotenv");
 dotenv.config();
-const port = process.env.PORT;
-const cors = require('cors');
-const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
-app.use(express.json())
-app.use(cors());
+const port = process.env.PORT;
+const cors = require("cors");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const { auth } = require("./auth");
+// Middleware
+app.use(express.json());
+
+app.use(
+    cors({
+        origin: "http://localhost:3000",
+        credentials: true,
+    })
+);
+
+
+
+const verifySession = async (req, res, next) => {
+    try {
+        const session = await auth.api.getSession({
+            headers: req.headers,
+        });
+
+        if (!session) {
+            return res.status(401).send("Unauthorized");
+        }
+
+        req.user = session.user;
+        next();
+    } catch (error) {
+        return res.status(401).send("Unauthorized");
+    }
+};
+
 
 const uri = process.env.MONGODB_URI;
 
@@ -19,7 +47,7 @@ const client = new MongoClient(uri, {
         version: ServerApiVersion.v1,
         strict: true,
         deprecationErrors: true,
-    }
+    },
 });
 
 async function run() {
@@ -31,52 +59,100 @@ async function run() {
         const ideasCollection = database.collection("ideas");
         const commentsCollection = database.collection("comments");
 
-        app.post('/ideas', async (req, res) => {
+        app.get("/", (req, res) => {
+            res.send("Hello World!");
+        });
+
+        app.post("/ideas", async (req, res) => {
             const ideas = req.body;
             const result = await ideasCollection.insertOne(ideas);
             res.send(result);
         });
 
-        app.get('/', (req, res) => {
-            res.send('Hello World!');
-        });
-
         app.get("/ideas/trending", async (req, res) => {
-
-            const cursor = ideasCollection.find().limit(6);
-            const result = await cursor.toArray();
+            const result = await ideasCollection.find().limit(6).toArray();
             res.send(result);
         });
-
 
         app.get("/ideas", async (req, res) => {
             const { search, category } = req.query;
             let query = {};
+
             if (search && search.trim() !== "") {
                 query.title = { $regex: search, $options: "i" };
             }
-            if (category && category !== "All Categories" && category.trim() !== "") {
-                query.category = { $regex: `^${category}$`, $options: "i" };
+
+            if (
+                category &&
+                category !== "All Categories" &&
+                category.trim() !== ""
+            ) {
+                query.category = {
+                    $regex: `^${category}$`,
+                    $options: "i",
+                };
             }
+
             const result = await ideasCollection.find(query).toArray();
             res.send(result);
         });
 
-        app.get("/my-ideas/:email", async (req, res) => {
-            const email = req.params.email;
-            const result = await ideasCollection
-                .find({ userEmail: email })
-                .toArray();
+        app.get("/ideas/:id", async (req, res) => {
+            const id = req.params.id;
+            const result = await ideasCollection.findOne({
+                _id: new ObjectId(id),
+            });
+
             res.send(result);
         });
 
-        app.get('/ideas/:id', async (req, res) => {
-            const id = req.params.id;
-            const result = await ideasCollection.findOne({
-                _id: new ObjectId(id)
-            });
-            res.send(result);
-        });
+        app.get(
+            "/my-ideas/:email",
+            verifySession,
+            async (req, res) => {
+                const email = req.params.email;
+                if (req.user.email !== email) {
+                    return res.status(403).send("Forbidden");
+                }
+                const result = await ideasCollection
+                    .find({ userEmail: email })
+                    .toArray();
+                res.send(result);
+            }
+        );
+
+        app.put(
+            "/ideas/:id",
+            verifySession,
+            async (req, res) => {
+                const id = req.params.id;
+                const updatedIdea = req.body;
+                const result = await ideasCollection.updateOne(
+                    {
+                        _id: new ObjectId(id),
+                    },
+                    {
+                        $set: updatedIdea,
+                    }
+                );
+
+                res.send(result);
+            }
+        );
+
+        app.delete(
+            "/ideas/:id",
+            verifySession,
+            async (req, res) => {
+                const id = req.params.id;
+
+                const result = await ideasCollection.deleteOne({
+                    _id: new ObjectId(id),
+                });
+
+                res.send(result);
+            }
+        );
 
         app.post("/comments", async (req, res) => {
             const comment = {
@@ -84,103 +160,103 @@ async function run() {
                 ideaId: new ObjectId(req.body.ideaId),
                 createdAt: new Date(),
             };
-            const result = await commentsCollection.insertOne(comment);
+
+            const result =
+                await commentsCollection.insertOne(comment);
+
             res.send(result);
         });
 
         app.get("/comments/:ideaId", async (req, res) => {
             const { ideaId } = req.params;
+
             const result = await commentsCollection
-                .find({ ideaId: new ObjectId(ideaId) })
+                .find({
+                    ideaId: new ObjectId(ideaId),
+                })
                 .sort({ createdAt: -1 })
                 .toArray();
+
             res.send(result);
         });
 
         app.put("/comments/:id", async (req, res) => {
             const id = req.params.id;
             const { text } = req.body;
-            const result = await commentsCollection.updateOne(
-                {
-                    _id: new ObjectId(id),
-                },
-                {
-                    $set: { text, },
-                }
-            );
-            res.send(result);
 
+            const result =
+                await commentsCollection.updateOne(
+                    {
+                        _id: new ObjectId(id),
+                    },
+                    {
+                        $set: { text },
+                    }
+                );
+
+            res.send(result);
         });
 
         app.delete("/comments/:id", async (req, res) => {
             const id = req.params.id;
-            const result = await commentsCollection.deleteOne({
-                _id: new ObjectId(id),
-            });
+
+            const result =
+                await commentsCollection.deleteOne({
+                    _id: new ObjectId(id),
+                });
+
             res.send(result);
         });
 
-        app.get("/my-interactions/:email", async (req, res) => {
-            const email = req.params.email;
-            const result = await commentsCollection.aggregate([
-                {
-                    $match: { userEmail: email }
-                },
-                {
-                    $lookup: {
-                        from: "ideas",
-                        localField: "ideaId",
-                        foreignField: "_id",
-                        as: "idea"
-                    }
-                },
-                {
-                    $unwind: "$idea"
-                },
-                {
-                    $project: {
-                        text: 1,
-                        createdAt: 1,
-                        ideaId: 1,
-                        "idea._id": 1,
-                        "idea.title": 1
-                    }
-                },
-                {
-                    $sort: { createdAt: -1 }
+        app.get(
+            "/my-interactions/:email",
+            verifySession,
+            async (req, res) => {
+                const email = req.params.email;
+
+                if (req.user.email !== email) {
+                    return res.status(403).send("Forbidden");
                 }
-            ]).toArray();
 
-            res.send(result);
-        });
+                const result =
+                    await commentsCollection
+                        .aggregate([
+                            {
+                                $match: {
+                                    userEmail: email,
+                                },
+                            },
+                            {
+                                $lookup: {
+                                    from: "ideas",
+                                    localField: "ideaId",
+                                    foreignField: "_id",
+                                    as: "idea",
+                                },
+                            },
+                            {
+                                $unwind: "$idea",
+                            },
+                            {
+                                $project: {
+                                    text: 1,
+                                    createdAt: 1,
+                                    ideaId: 1,
+                                    "idea._id": 1,
+                                    "idea.title": 1,
+                                },
+                            },
+                            {
+                                $sort: {
+                                    createdAt: -1,
+                                },
+                            },
+                        ])
+                        .toArray();
 
-       
-        app.put("/ideas/:id", async (req, res) => {
-            const id = req.params.id;
-            const updatedIdea = req.body;
-
-            const result = await ideasCollection.updateOne(
-                { _id: new ObjectId(id) },
-                {
-                    $set: updatedIdea,
-                }
-            );
-
-            res.send(result);
-        });
-
-        
-        app.delete("/ideas/:id", async (req, res) => {
-            const id = req.params.id;
-
-            const result = await ideasCollection.deleteOne({
-                _id: new ObjectId(id),
-            });
-
-            res.send(result);
-        });
-
-
+                res.send(result);
+            }
+        );
     } catch (error) {
         console.error(error);
     }
