@@ -52,31 +52,23 @@ async function run() {
         app.get("/ideas", async (req, res) => {
             const { search, category } = req.query;
             let query = {};
-
-
             if (search && search.trim() !== "") {
                 query.title = { $regex: search, $options: "i" };
             }
-
-
             if (category && category !== "All Categories" && category.trim() !== "") {
                 query.category = { $regex: `^${category}$`, $options: "i" };
-
             }
-
             const result = await ideasCollection.find(query).toArray();
             res.send(result);
         });
 
         app.get("/my-ideas/:email", async (req, res) => {
             const email = req.params.email;
-
             const result = await ideasCollection
                 .find({ userEmail: email })
                 .toArray();
             res.send(result);
         });
-
 
         app.get('/ideas/:id', async (req, res) => {
             const id = req.params.id;
@@ -94,7 +86,6 @@ async function run() {
             };
             const result = await commentsCollection.insertOne(comment);
             res.send(result);
-
         });
 
         app.get("/comments/:ideaId", async (req, res) => {
@@ -107,10 +98,8 @@ async function run() {
         });
 
         app.put("/comments/:id", async (req, res) => {
-
             const id = req.params.id;
             const { text } = req.body;
-
             const result = await commentsCollection.updateOne(
                 {
                     _id: new ObjectId(id),
@@ -119,7 +108,6 @@ async function run() {
                     $set: { text, },
                 }
             );
-
             res.send(result);
 
         });
@@ -166,6 +154,32 @@ async function run() {
             res.send(result);
         });
 
+       
+        app.put("/ideas/:id", async (req, res) => {
+            const id = req.params.id;
+            const updatedIdea = req.body;
+
+            const result = await ideasCollection.updateOne(
+                { _id: new ObjectId(id) },
+                {
+                    $set: updatedIdea,
+                }
+            );
+
+            res.send(result);
+        });
+
+        
+        app.delete("/ideas/:id", async (req, res) => {
+            const id = req.params.id;
+
+            const result = await ideasCollection.deleteOne({
+                _id: new ObjectId(id),
+            });
+
+            res.send(result);
+        });
+
 
     } catch (error) {
         console.error(error);
@@ -175,5 +189,5 @@ async function run() {
 run();
 
 app.listen(port, () => {
-    console.log(`🚀 Server running on port ${port}`);
+    console.log(`Server running on port ${port}`);
 });
