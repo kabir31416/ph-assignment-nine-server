@@ -68,7 +68,14 @@ async function run() {
             res.send(result);
         });
 
-        
+        app.get("/my-ideas/:email", async (req, res) => {
+            const email = req.params.email;
+
+            const result = await ideasCollection
+                .find({ userEmail: email })
+                .toArray();
+            res.send(result);
+        });
 
 
         app.get('/ideas/:id', async (req, res) => {
