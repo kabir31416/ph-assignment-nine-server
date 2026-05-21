@@ -29,6 +29,7 @@ async function run() {
 
         const database = client.db("IdeaVaultDb");
         const ideasCollection = database.collection("ideas");
+        const commentsCollection = database.collection("comments");
 
         app.post('/ideas', async (req, res) => {
             const ideas = req.body;
@@ -41,16 +42,34 @@ async function run() {
         });
 
         app.get("/ideas/trending", async (req, res) => {
-            
-                const cursor = ideasCollection.find().limit(6);
-                const result = await cursor.toArray();
-                res.send(result);
-        });
 
-        app.get('/ideas', async (req, res) => {
-            const result = await ideasCollection.find().toArray();
+            const cursor = ideasCollection.find().limit(6);
+            const result = await cursor.toArray();
             res.send(result);
         });
+
+
+        app.get("/ideas", async (req, res) => {
+            const { search, category } = req.query;
+            let query = {};
+
+
+            if (search && search.trim() !== "") {
+                query.title = { $regex: search, $options: "i" };
+            }
+
+
+            if (category && category !== "All Categories" && category.trim() !== "") {
+                query.category = { $regex: `^${category}$`, $options: "i" };
+
+            }
+
+            const result = await ideasCollection.find(query).toArray();
+            res.send(result);
+        });
+
+        
+
 
         app.get('/ideas/:id', async (req, res) => {
             const id = req.params.id;
@@ -59,6 +78,87 @@ async function run() {
             });
             res.send(result);
         });
+
+        app.post("/comments", async (req, res) => {
+            const comment = {
+                ...req.body,
+                ideaId: new ObjectId(req.body.ideaId),
+                createdAt: new Date(),
+            };
+            const result = await commentsCollection.insertOne(comment);
+            res.send(result);
+
+        });
+
+        app.get("/comments/:ideaId", async (req, res) => {
+            const { ideaId } = req.params;
+            const result = await commentsCollection
+                .find({ ideaId: new ObjectId(ideaId) })
+                .sort({ createdAt: -1 })
+                .toArray();
+            res.send(result);
+        });
+
+        app.put("/comments/:id", async (req, res) => {
+
+            const id = req.params.id;
+            const { text } = req.body;
+
+            const result = await commentsCollection.updateOne(
+                {
+                    _id: new ObjectId(id),
+                },
+                {
+                    $set: { text, },
+                }
+            );
+
+            res.send(result);
+
+        });
+
+        app.delete("/comments/:id", async (req, res) => {
+            const id = req.params.id;
+            const result = await commentsCollection.deleteOne({
+                _id: new ObjectId(id),
+            });
+            res.send(result);
+        });
+
+        app.get("/my-interactions/:email", async (req, res) => {
+            const email = req.params.email;
+            const result = await commentsCollection.aggregate([
+                {
+                    $match: { userEmail: email }
+                },
+                {
+                    $lookup: {
+                        from: "ideas",
+                        localField: "ideaId",
+                        foreignField: "_id",
+                        as: "idea"
+                    }
+                },
+                {
+                    $unwind: "$idea"
+                },
+                {
+                    $project: {
+                        text: 1,
+                        createdAt: 1,
+                        ideaId: 1,
+                        "idea._id": 1,
+                        "idea.title": 1
+                    }
+                },
+                {
+                    $sort: { createdAt: -1 }
+                }
+            ]).toArray();
+
+            res.send(result);
+        });
+
 
     } catch (error) {
         console.error(error);
