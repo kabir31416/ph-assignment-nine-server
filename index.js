@@ -7,17 +7,31 @@ dotenv.config();
 const port = process.env.PORT;
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const { createRemoteJWKSet, jwtVerify } = require("jose-cjs");
 
 app.use(express.json());
-app.use(cors({ origin: "http://localhost:3000", credentials: true }));
+app.use(cors({ origin: process.env.BASE_URL, credentials: true }));
 
-const verifyToken = (req, res, next) => {
+const verifyToken = async (req, res, next) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).send("Unauthorized");
+
     const token = authHeader.split(" ")[1];
     if (!token) return res.status(401).send("Unauthorized");
     req.token = token;
+    try {
+    const JWKS = createRemoteJWKSet(
+      new URL(process.env.JWKS_URI)
+    )
+    const { payload } = await jwtVerify(token, JWKS, {
+      issuer: process.env.BASE_URL, 
+      audience: process.env.BASE_URL,
+    })
     next();
+  } catch (error) {
+    return res.status(403).json({ error: "Forbidden" });
+    throw error
+  }
 };
 
 const uri = process.env.MONGODB_URI;
@@ -41,7 +55,7 @@ async function run() {
             res.send("Hello World!");
         });
 
-        app.post("/ideas", async (req, res) => {
+        app.post("/ideas", verifyToken, async (req, res) => {
             const ideas = req.body;
             const result = await ideasCollection.insertOne(ideas);
             res.send(result);
@@ -57,7 +71,7 @@ async function run() {
             let query = {};
             if (search && search.trim() !== "") query.title = { $regex: search, $options: "i" };
 
-            if (category && category !== "All Categories" && category.trim() !== "") 
+            if (category && category !== "All Categories" && category.trim() !== "")
                 query.category = { $regex: `^${category}$`, $options: "i" };
 
             const result = await ideasCollection.find(query).toArray();
@@ -84,9 +98,9 @@ async function run() {
             const id = req.params.id;
             const updatedIdea = req.body;
             const result = await ideasCollection.updateOne(
-                { 
-                    _id: new ObjectId(id) 
-                }, 
+                {
+                    _id: new ObjectId(id)
+                },
                 { $set: updatedIdea });
             res.send(result);
         });
@@ -94,17 +108,19 @@ async function run() {
         app.delete("/ideas/:id", verifyToken, async (req, res) => {
             const id = req.params.id;
             const result = await ideasCollection.deleteOne(
-                { 
-                    _id: new ObjectId(id) 
+                {
+                    _id: new ObjectId(id)
                 });
             res.send(result);
         });
 
         app.post("/comments", async (req, res) => {
-            const comment = { ...req.body, 
+            const comment = {
+                ...req.body,
 
-                ideaId: new ObjectId(req.body.ideaId), 
-                createdAt: new Date() };
+                ideaId: new ObjectId(req.body.ideaId),
+                createdAt: new Date()
+            };
 
             const result = await commentsCollection.insertOne(comment);
             res.send(result);
@@ -121,7 +137,7 @@ async function run() {
             const id = req.params.id;
             const { text } = req.body;
             const result = await commentsCollection.updateOne(
-                { _id: new ObjectId(id) }, 
+                { _id: new ObjectId(id) },
                 { $set: { text } }
             );
             res.send(result);
@@ -143,7 +159,7 @@ async function run() {
                 { $unwind: "$idea" },
 
                 { $project: { text: 1, createdAt: 1, ideaId: 1, "idea._id": 1, "idea.title": 1 } },
-                
+
                 { $sort: { createdAt: -1 } }
             ]).toArray();
             res.send(result);
