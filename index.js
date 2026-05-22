@@ -12,36 +12,35 @@ const { createRemoteJWKSet, jwtVerify } = require("jose-cjs");
 app.use(express.json());
 app.use(cors({ origin: process.env.BASE_URL, credentials: true }));
 
+const JWKS = createRemoteJWKSet(
+    new URL(`${process.env.JWKS_URI}/api/auth/jwks`)
+);
+
 const verifyToken = async (req, res, next) => {
-    try {
-        const authHeader = req.headers.authorization;
+  try {
+    const authHeader = req.headers.authorization;
 
-        console.log("AUTH HEADER:", authHeader);
-
-        if (!authHeader) {
-            return res.status(401).json({ message: "Unauthorized" });
-        }
-
-        const token = authHeader.split(" ")[1];
-
-        const JWKS = createRemoteJWKSet(
-            new URL(process.env.JWKS_URI)
-        );
-
-        const { payload } = await jwtVerify(token, JWKS, {
-            issuer: process.env.AUTH_ISSUER,
-            audience: process.env.AUTH_AUDIENCE,
-        });
-
-        req.user = payload;
-        next();
-    } catch (error) {
-        console.log("JWT ERROR:", error);
-
-        return res.status(403).json({
-            message: "Invalid token / verification failed",
-        });
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        message: "Unauthorized",
+      });
     }
+
+    const token = authHeader.split(" ")[1];
+
+    const { payload } = await jwtVerify(token, JWKS);
+
+    req.user = payload;
+
+    next();
+  } catch (error) {
+    console.log("JWT ERROR:", error);
+
+    return res.status(403).json({
+      message: "Invalid token",
+      error: error.message,
+    });
+  }
 };
 
 const uri = process.env.MONGODB_URI;
@@ -55,8 +54,9 @@ const client = new MongoClient(uri, {
 
 async function run() {
     try {
-        await client.connect();
+        // await client.connect();
         console.log("Connected to MongoDB");
+
         const database = client.db("IdeaVaultDb");
         const ideasCollection = database.collection("ideas");
         const commentsCollection = database.collection("comments");
