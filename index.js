@@ -13,25 +13,35 @@ app.use(express.json());
 app.use(cors({ origin: process.env.BASE_URL, credentials: true }));
 
 const verifyToken = async (req, res, next) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).send("Unauthorized");
-
-    const token = authHeader.split(" ")[1];
-    if (!token) return res.status(401).send("Unauthorized");
-    req.token = token;
     try {
-    const JWKS = createRemoteJWKSet(
-      new URL(process.env.JWKS_URI)
-    )
-    const { payload } = await jwtVerify(token, JWKS, {
-      issuer: process.env.BASE_URL, 
-      audience: process.env.BASE_URL,
-    })
-    next();
-  } catch (error) {
-    return res.status(403).json({ error: "Forbidden" });
-    throw error
-  }
+        const authHeader = req.headers.authorization;
+
+        console.log("AUTH HEADER:", authHeader);
+
+        if (!authHeader) {
+            return res.status(401).json({ message: "Unauthorized" });
+        }
+
+        const token = authHeader.split(" ")[1];
+
+        const JWKS = createRemoteJWKSet(
+            new URL(process.env.JWKS_URI)
+        );
+
+        const { payload } = await jwtVerify(token, JWKS, {
+            issuer: process.env.AUTH_ISSUER,
+            audience: process.env.AUTH_AUDIENCE,
+        });
+
+        req.user = payload;
+        next();
+    } catch (error) {
+        console.log("JWT ERROR:", error);
+
+        return res.status(403).json({
+            message: "Invalid token / verification failed",
+        });
+    }
 };
 
 const uri = process.env.MONGODB_URI;
@@ -55,7 +65,7 @@ async function run() {
             res.send("Hello World!");
         });
 
-        app.post("/ideas", verifyToken, async (req, res) => {
+        app.post("/ideas", async (req, res) => {
             const ideas = req.body;
             const result = await ideasCollection.insertOne(ideas);
             res.send(result);
